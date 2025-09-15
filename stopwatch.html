@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Stopwatch</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#94a3b8;--accent:#60a5fa;--glass: rgba(255,255,255,0.03)}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{display:grid;place-items:center;padding:24px;background:linear-gradient(180deg,#07102a 0%, #07132b 100%);color:#e6eef8}
+
+    .card{width:min(720px,96vw);background:linear-gradient(180deg,var(--card),#071426);border-radius:16px;padding:28px;box-shadow:0 10px 30px rgba(2,6,23,0.6);}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:20px;margin:0}
+    .display{font-weight:700;font-size:56px;letter-spacing:2px;text-align:center;padding:28px 12px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));margin:20px 0}
+
+    .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+    button{background:var(--glass);border:1px solid rgba(255,255,255,0.04);color:var(--accent);padding:10px 16px;border-radius:10px;font-weight:600;cursor:pointer;backdrop-filter: blur(6px)}
+    button.primary{background:linear-gradient(90deg,var(--accent),#3b82f6);color:#05243a;border:none}
+    button.warn{color:#ffb86b}
+    button.ghost{background:transparent;border:1px dashed rgba(255,255,255,0.04);color:var(--muted)}
+
+    .laps{margin-top:18px;max-height:220px;overflow:auto;border-radius:10px;padding:10px;background:rgba(255,255,255,0.02)}
+    .lap{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.02)}
+    .lap:last-child{border-bottom:none}
+
+    .muted{color:var(--muted);font-size:13px}
+    .small{font-size:13px}
+
+    .row{display:flex;gap:12px;align-items:center}
+
+    @media (max-width:520px){.display{font-size:40px;padding:18px}}
+  </style>
+</head>
+<body>
+  <div class="card" role="application" aria-label="Stopwatch app">
+    <div class="top">
+      <h1>Stopwatch</h1>
+      <div class="muted small">Press <strong>Space</strong> to Start/Stop • <strong>L</strong> = Lap</div>
+    </div>
+
+    <div id="display" class="display" aria-live="polite">00:00:00.000</div>
+
+    <div class="controls">
+      <button id="startStop" class="primary">Start</button>
+      <button id="lapBtn">Lap</button>
+      <button id="resetBtn" class="ghost">Reset</button>
+      <button id="exportBtn" class="ghost">Export Laps</button>
+      <button id="clearLaps" class="warn">Clear Laps</button>
+    </div>
+
+    <div class="laps" id="lapsContainer" aria-live="polite"></div>
+  </div>
+
+  <script>
+    // Accurate stopwatch using performance.now() + requestAnimationFrame
+    const display = document.getElementById('display');
+    const startStopBtn = document.getElementById('startStop');
+    const lapBtn = document.getElementById('lapBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const clearLapsBtn = document.getElementById('clearLaps');
+    const lapsContainer = document.getElementById('lapsContainer');
+
+    let running = false;
+    let startTime = 0;       // time when started (performance.now)
+    let elapsedBefore = 0;   // ms already elapsed from previous runs
+    let rafId = null;
+    let laps = [];
+
+    function formatTime(ms) {
+      const total = Math.floor(ms);
+      const hours = Math.floor(total / 3600000);
+      const minutes = Math.floor((total % 3600000) / 60000);
+      const seconds = Math.floor((total % 60000) / 1000);
+      const milliseconds = total % 1000;
+      return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}.${String(milliseconds).padStart(3,'0')}`;
+    }
+
+    function update() {
+      const now = performance.now();
+      const elapsed = elapsedBefore + (now - startTime);
+      display.textContent = formatTime(elapsed);
+      rafId = requestAnimationFrame(update);
+    }
+
+    function start() {
+      if (running) return;
+      running = true;
+      startTime = performance.now();
+      startStopBtn.textContent = 'Stop';
+      startStopBtn.classList.remove('primary');
+      startStopBtn.classList.add('ghost');
+      rafId = requestAnimationFrame(update);
+    }
+
+    function stop() {
+      if (!running) return;
+      running = false;
+      cancelAnimationFrame(rafId);
+      const now = performance.now();
+      elapsedBefore += (now - startTime);
+      startStopBtn.textContent = 'Start';
+      startStopBtn.classList.remove('ghost');
+      startStopBtn.classList.add('primary');
+    }
+
+    function reset() {
+      stop();
+      elapsedBefore = 0;
+      display.textContent = '00:00:00.000';
+    }
+
+    function recordLap() {
+      const nowMs = running ? (elapsedBefore + (performance.now() - startTime)) : elapsedBefore;
+      const lapTime = nowMs;
+      const prevTotal = laps.length ? laps[laps.length-1].total : 0;
+      const split = lapTime - prevTotal;
+      const lapObj = { index: laps.length+1, total: lapTime, split };
+      laps.push(lapObj);
+      renderLaps();
+    }
+
+    function renderLaps(){
+      lapsContainer.innerHTML = '';
+      for(let i=laps.length-1;i>=0;i--){
+        const l = laps[i];
+        const el = document.createElement('div');
+        el.className = 'lap';
+        el.innerHTML = `<div>Lap ${l.index}</div><div>${formatTime(l.split)} <span class="muted">(Total: ${formatTime(l.total)})</span></div>`;
+        lapsContainer.appendChild(el);
+      }
+    }
+
+    function exportLaps(){
+      if(!laps.length){ alert('No laps to export'); return; }
+      let csv = 'Lap,Split(ms),Split,Total(ms),Total\n';
+      for(const l of laps){
+        csv += `${l.index},${Math.round(l.split)},"${formatTime(l.split)}",${Math.round(l.total)},"${formatTime(l.total)}"\n`;
+      }
+      const blob = new Blob([csv], {type: 'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'laps.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function clearLaps(){
+      if(!laps.length) return;
+      if(!confirm('Clear all laps?')) return;
+      laps = [];
+      renderLaps();
+    }
+
+    // Buttons
+    startStopBtn.addEventListener('click', ()=>{ running ? stop() : start(); });
+    lapBtn.addEventListener('click', recordLap);
+    resetBtn.addEventListener('click', ()=>{ if(confirm('Reset stopwatch and clear running time?')) reset(); });
+    exportBtn.addEventListener('click', exportLaps);
+    clearLapsBtn.addEventListener('click', clearLaps);
+
+    // Keyboard shortcuts: Space = Start/Stop, L = Lap, R = Reset
+    window.addEventListener('keydown', (e)=>{
+      if(e.code === 'Space'){ e.preventDefault(); running ? stop() : start(); }
+      if(e.key.toLowerCase() === 'l'){ recordLap(); }
+      if(e.key.toLowerCase() === 'r'){ reset(); }
+    });
+
+    // Accessibility: focusable buttons
+    startStopBtn.tabIndex = 0; lapBtn.tabIndex = 0; resetBtn.tabIndex = 0; exportBtn.tabIndex = 0; clearLapsBtn.tabIndex = 0;
+
+    // small helper: save/restore state in sessionStorage so accidental refresh won't lose time
+    window.addEventListener('beforeunload', ()=>{
+      const state = { running, startTimeOffset: running ? (performance.now() - startTime) : 0, elapsedBefore, laps };
+      try{ sessionStorage.setItem('stopwatch_state', JSON.stringify(state)); }catch(e){}
+    });
+
+    window.addEventListener('load', ()=>{
+      try{
+        const raw = sessionStorage.getItem('stopwatch_state');
+        if(raw){
+          const st = JSON.parse(raw);
+          if(st){
+            running = !!st.running;
+            elapsedBefore = st.elapsedBefore || 0;
+            laps = st.laps || [];
+            renderLaps();
+            if(running){
+              // restore approximate startTime using offset
+              startTime = performance.now() - (st.startTimeOffset || 0);
+              startStopBtn.textContent = 'Stop';
+              startStopBtn.classList.remove('primary');
+              startStopBtn.classList.add('ghost');
+              rafId = requestAnimationFrame(update);
+            }else{
+              display.textContent = formatTime(elapsedBefore);
+            }
+          }
+        }
+      }catch(e){ console.warn(e); }
+    });
+  </script>
+</body>
+</html>
